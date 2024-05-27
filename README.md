@@ -5,6 +5,7 @@ This project supports an easy way to replace the font of a PDF document. (requir
 You can find many examples and technical background on PyMuPdf_Utilities Official GitHub.
 https://github.com/pymupdf/PyMuPDF-Utilities
 
+All modification from PyMuPDF_Utilities is done dy june6423(Dongjun Nam)
 
 ## Features
 
