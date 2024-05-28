@@ -5,7 +5,6 @@ This project supports an easy way to replace the font of a PDF document. (requir
 You can find many examples and technical background on PyMuPdf_Utilities Official GitHub.
 https://github.com/pymupdf/PyMuPDF-Utilities
 
-All modification from PyMuPDF_Utilities is done dy june6423(Dongjun Nam)
 
 ## Features
 
@@ -81,6 +80,6 @@ While this is a set of useful scripts providing a long-awaited feature, it is no
 
 In our first attempt, we used a white patch to cover the existing text and tried to overwrite the new text on top. However, this method obscured the background and resulted in the generated PDF containing two duplicate pieces of text.
 
-In our second attempt, we modified the PDF file content stream directly. We based our work on PyMuPDF-Utilities's font replacement, where the existing logic resizes the internal font in a way that respects the bounding box (bbox) of a line of text. However, this approach did not preserve the bboxes of individual words, causing text overlapping.
+Next, we modified the PDF file content stream directly. We based our work on PyMuPDF-Utilities' font replacement, where the existing logic resizes the internal font in a way that respects the bounding box (bbox) of a line of text. Preserving the bboxes of words and lines each has its own advantages and disadvantages. You can modify the ```mode = "word"``` in ```util.replace_font()``` to change the logic.
 
-The code for the first attempt is in ```font_replace_patch.py```, and the code for the second attempt is in ```font_replace_line.py```. The current approach is in ```font_replace_word.py```. The code and example files will give you an idea of the quality of each version and their respective pros and cons.
+The code for the first attempt is in ```font_replace_patch.py```, and the code for the line logic is in ```font_replace_line.py```. The code for the word logic is in ```font_replace_word.py```. The code and example files will give you an idea of the quality of each version and their respective pros and cons.
