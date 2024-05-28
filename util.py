@@ -39,16 +39,6 @@ def get_dpi(indoc, orig_W, orig_H):
     return round((dpi_x + dpi_y) / 2)
 
 
-def recolor(old):
-    """Convet sRGB color back to PDF color triple.
-    sRGB is an integer of format RRGGBB.
-    """
-    r = old >> 16
-    g = (old - (r << 16)) >> 8
-    b = old - (r << 16) - (g << 8)
-    return (r / 255, g / 255, b / 255)
-
-
 def resize(span, font):
     """Adjust fontsize for using replacement font."""
     text = span["text"]
@@ -151,7 +141,17 @@ def cont_clean(page, fontrefs):
     
     for (xref, xref0) in xref_list: 
         cont = doc.xref_stream(xref0)
-        cont_lines = cont.splitlines()
+        cont_line = cont.splitlines()
+        cont_lines = []
+        for line in cont_line:
+            if len(line) == 0:
+                continue
+            parts = line.split(b'/')
+            parts = [b'/' + part for part in parts if part]  # prepend '/' to each part
+            if not line.startswith(b'/'):
+                parts[0] = parts[0][1:]
+            cont_lines.extend(parts)
+
         if len(cont_lines) == 0 or cont_lines[0] == cont:
             return False
         changed, cont_lines = remove_font(fontrefs[xref], cont_lines)
@@ -181,7 +181,16 @@ def get_page_fontrefs(page, font_name):
     return fontrefs  # return list of font reference names
 
 
-def process(indoc, page_num, bbox, font_name, dpi=300):
+def process(type, data):
+    if type == "word":
+        return process_word(*data)
+    elif type == "line":
+        return process_line(*data)
+    else:
+        raise ValueError("Invalid type: %s" % type)
+    
+
+def process_word(indoc, page_num, bbox, font_name, dpi=300):
     assert isinstance(indoc, fitz.Document)
     assert isinstance(page_num, int)
     assert isinstance(font_name, str)
@@ -272,6 +281,73 @@ def process(indoc, page_num, bbox, font_name, dpi=300):
     return image
 
 
+def process_line(indoc, page_num, bbox, font_name, dpi=300):
+    assert isinstance(indoc, fitz.Document)
+    assert isinstance(page_num, int)
+    assert isinstance(font_name, str)
+
+    if font_name == "random":
+        font_name = random_font()
+
+    extr_flags = fitz.TEXT_PRESERVE_LIGATURES | fitz.TEXT_PRESERVE_WHITESPACE
+    font = fitz.Font(font_name)
+    page = indoc[page_num]
+    blocks = page.get_text("dict", flags=extr_flags)["blocks"]
+
+    fontrefs = get_page_fontrefs(page, font_name)
+    if fontrefs == {}:  # page has no fonts to replace
+        print("Given PDF does not contain any fonts", page_num)
+        return None
+    
+    valid = cont_clean(page, fontrefs)  # remove text using fonts to be replaced
+    if not valid:
+        print("Cannot process this file.")
+        return None
+    
+    textwriters = {}  # contains one text writer per detected text color
+
+    for block in blocks:
+        for line in block["lines"]:
+            wmode = line["wmode"] # writing mode (horizontal, vertical)
+            wdir = list(line["dir"]) # writing direction
+            for span in line["spans"]:
+                text = span["text"].replace(chr(0xFFFD), chr(0xB6))
+                # guard against non-utf8 characters
+                textb = text.encode("utf8", errors="backslashreplace")
+                text = textb.decode("utf8", errors="backslashreplace")
+
+                if wdir != [1, 0]:  # special treatment for tilted text
+                    tilted_span(page, wdir, span, font)
+                    continue
+
+                if span['color'] in textwriters.keys():  # already have a textwriter?
+                    tw = textwriters[span['color']]  # re-use it
+                else:  # make new
+                    tw = fitz.TextWriter(page.rect)  # make text writer
+                    textwriters[span['color']] = tw  # store it for later use
+                try:
+                    tw.append(
+                        span["origin"],
+                        text,
+                        font=font,
+                        fontsize=min(span['size'],resize(span, font)),  # use adjusted fontsize
+                    )
+                except:
+                    print("page %i exception:" % page.number, text)
+
+    # now write all text stored in the list of text writers
+    for color in textwriters.keys():  # output the stored text per color
+        tw = textwriters[color]
+        outcolor = fitz.sRGB_to_pdf(color)  # recover (r,g,b)
+        tw.write_text(page, color=outcolor)
+
+    # Crop the image
+    pixmap = indoc[page_num].get_pixmap(dpi=dpi)
+    image = Image.frombytes("RGB", [pixmap.width, pixmap.height], pixmap.samples)
+    image = image.crop(bbox)
+    return image
+
+
 def replace_font(indoc, page_num, bbox, font_name, dpi): 
     """Replace font in a PDF page"""
 
@@ -283,15 +359,15 @@ def replace_font(indoc, page_num, bbox, font_name, dpi):
     # If you dont know the dpi, you can use get_dpi function to get the dpi of the page.
     # output: A cropped PIL image of the specified page and bounding box.
 
+    mode = "word" # mode = "word" or "line"
     if isinstance(page_num, int):
-        return process(indoc, page_num, bbox, font_name, dpi)
+        return process(mode, (indoc, page_num, bbox, font_name, dpi))
     
     elif isinstance(page_num, list):
         return_list = []
         for page in page_num:
-            return_list.append(process(indoc, page, bbox, font_name, dpi))
+            return_list.append(process(mode, (indoc, page, bbox, font_name, dpi)))
         return return_list
-    
 
 
 # import fitz, json
@@ -302,4 +378,5 @@ def replace_font(indoc, page_num, bbox, font_name, dpi):
 #     data = json.load(f)
 # bbox = data['bbox'] # [155,2751,2237,2978]
 # image = replace_font(indoc, 13, bbox, "times-bolditalic", 288)
-# image.save("/shared/workspace/p.png")
+# image.save("/shared/workspace/q.png")
+    
